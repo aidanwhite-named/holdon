@@ -1,0 +1,8 @@
+# 1단계: 엔진 + 족보/에쿼티
+treys==0.1.8
+
+# 개발/테스트
+pytest>=8.0
+
+# 3단계: 웹 UI (st.fragment(run_every), st.tabs(default), 버튼 단축키 사용)
+streamlit>=1.66
