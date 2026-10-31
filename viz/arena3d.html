@@ -1,0 +1,756 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>Order Flow Arena 3D</title>
+<style>
+:root{--bg:#0d1117;--panel:#151b23;--line:#2a323d;--txt:#d6dde6;--mut:#8b96a5;--buy:#E24B4A;--sell:#378ADD;--front:#EF9F27}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:13px/1.5 "Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;height:100vh;display:flex;overflow:hidden}
+#main{flex:1;display:flex;flex-direction:column;min-width:0}
+#stage{flex:1;position:relative;min-height:0}
+#stage canvas{display:block}
+#hud{position:absolute;top:10px;left:14px;right:14px;pointer-events:none}
+#hud .row{display:flex;justify-content:space-between;margin-bottom:5px}
+#hud b{font-weight:600}
+.hp{display:flex;gap:6px;height:10px}
+.hp>div{flex:1;background:#222a35;border-radius:4px;overflow:hidden;display:flex}
+.hp>div.l{justify-content:flex-end}
+.hp i{display:block;height:100%;transition:width .3s}
+.corner{position:absolute;bottom:10px;font-size:12px;color:var(--mut);pointer-events:none}
+#wave{height:140px;border-top:1px solid var(--line);position:relative}
+#wave canvas{width:100%;height:100%;display:block}
+#side{width:320px;background:var(--panel);border-left:1px solid var(--line);overflow-y:auto;padding:12px 14px 30px}
+h2{font-size:15px;margin:0 0 2px}
+h3{font-size:12px;color:var(--mut);font-weight:600;margin:16px 0 6px}
+label.t{display:flex;align-items:center;gap:7px;margin:3px 0;cursor:pointer}
+.btns{display:flex;flex-wrap:wrap;gap:6px}
+button,select{background:#1f2731;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:4px 9px;cursor:pointer;font:inherit}
+button:hover{border-color:#4a5566}
+button.on{border-color:var(--front);color:var(--front)}
+.sw{width:11px;height:11px;border-radius:2px;display:inline-block;flex:none}
+.note{color:var(--mut);font-size:11.5px}
+.kv{display:flex;justify-content:space-between;align-items:center;gap:8px}
+input[type=range]{width:100%;accent-color:var(--front)}
+.bar{flex:1;height:8px;background:#222a35;border-radius:3px;position:relative;overflow:hidden}
+.bar i{position:absolute;top:0;bottom:0}
+.bar:after{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:#4a5566}
+#alerts .a{background:#1f2731;border-left:3px solid var(--front);padding:5px 8px;margin:4px 0;font-size:12px}
+#alerts .a.blk{border-left-color:#e0e0e0}
+.mix{display:flex;gap:14px;margin-top:6px}
+.mix span{display:flex;align-items:center;gap:6px}
+.mix .sw{width:26px;height:14px;border:1px solid var(--line)}
+.feat{display:grid;grid-template-columns:1fr 1fr;gap:2px 10px;font-size:12px;margin:6px 0}
+.feat b{float:right;font-weight:600}
+.chips{margin:3px 0;font-size:11.5px}
+.chip{display:inline-block;padding:0 6px;border-radius:4px;margin:2px 2px 0 0;background:#1f2731;color:var(--mut)}
+.chip.ok{color:#6fcf97;background:#16281e}
+.ord{font-size:12px;padding:3px 0;border-bottom:1px solid var(--line)}
+.ord .r{color:var(--mut);font-size:11px}
+.up{color:var(--buy)}.dn{color:var(--sell)}
+</style>
+</head>
+<body>
+<div id="main">
+  <div id="stage">
+    <div id="hud">
+      <div class="row">
+        <span style="color:var(--buy)">매수 잔량 <b id="bq">0</b></span>
+        <span><b id="clock"></b> 체결강도 <b id="cs">100</b>% · 현재가 <b id="px">0</b> <b id="pc"></b> · KOSPI(가상) <b id="ix"></b></span>
+        <span style="color:var(--sell)"><b id="aq">0</b> 매도 잔량</span>
+      </div>
+      <div class="hp" id="hpbox"><div class="l"><i id="bhp" style="background:var(--buy);width:50%"></i></div><div><i id="ahp" style="background:var(--sell);width:50%"></i></div></div>
+    </div>
+    <div class="corner" style="left:14px">◀ 매수 진영 · 드래그 회전 / 휠 확대 / 우클릭 이동</div>
+    <div class="corner" style="right:14px">매도 진영 ▶</div>
+  </div>
+  <div id="wave"><canvas id="wcv"></canvas></div>
+</div>
+
+<div id="side">
+  <h2>오더플로우 아레나 3D</h2>
+  <div class="note">가상 데이터 데모. 실제 시세는 <code>ingest(trade)</code>로 넣으면 됩니다.</div>
+
+  <h3>재생</h3>
+  <div class="btns">
+    <button id="pause">일시정지</button>
+    <select id="speed"><option value="0.5">0.5x</option><option value="1" selected>1x</option><option value="2">2x</option><option value="4">4x</option><option value="10">10x</option><option value="30">30x</option><option value="60">60x</option></select>
+  </div>
+
+  <h3>실데이터 재생</h3>
+  <input type="file" id="replayFile" accept=".json" style="width:100%">
+  <div class="note" id="replayInfo">collector/to_replay.py로 만든 viz/replay/*.json 파일을 고르세요.</div>
+  <div class="btns" style="margin-top:6px"><button id="replayStop">시뮬레이션으로 돌아가기</button></div>
+
+  <h3>자동매매 (모의)</h3>
+  <div class="btns" style="margin-bottom:6px"><button id="kill">긴급 정지 (전량 청산)</button></div>
+  <label class="t"><input type="checkbox" id="stTrend" checked>체결강도 추세 전략</label>
+  <label class="t"><input type="checkbox" id="stDrop" checked>과대낙폭 매수 (버퍼 300만원)</label>
+  <label class="t"><input type="checkbox" id="stReqFor" checked>외인 동반 순매수 필수</label>
+  <div id="wts"></div>
+  <div id="feat" class="feat"></div>
+  <div id="checks"></div>
+  <div id="pnl" style="margin-top:6px"></div>
+  <div id="olog"></div>
+
+  <h3>임계값</h3>
+  <div class="kv"><span>최소 체결량</span><b id="thv"></b></div>
+  <input type="range" id="th" min="0" max="100" step="1" value="37">
+  <div class="kv"><span>블록딜 기준</span><b id="blv"></b></div>
+  <input type="range" id="bl" min="40" max="100" step="1" value="92">
+  <div class="kv"><span>알갱이 크기 배율</span><b id="szv"></b></div>
+  <input type="range" id="sz" min="0.4" max="2.5" step="0.1" value="1">
+  <div class="note">알갱이 부피가 체결량에 비례합니다 (한 변 길이 ∝ ∛수량).</div>
+
+  <h3>표시 레이어</h3>
+  <div id="layers"></div>
+
+  <h3>색상 기준</h3>
+  <label class="t"><input type="radio" name="cm" value="side" checked>매수 / 매도</label>
+  <label class="t"><input type="radio" name="cm" value="broker">증권사(창구)</label>
+  <label class="t"><input type="radio" name="cm" value="inv">투자자 (개인 R · 외인 G · 기관 B)</label>
+  <label class="t"><input type="checkbox" id="shapes" checked>증권사별 형태 다르게</label>
+
+  <h3>투자자 (최근 순매수)</h3>
+  <div id="invs"></div>
+  <div class="mix"><span>매수측 합성 <i class="sw" id="mixB"></i></span><span>매도측 합성 <i class="sw" id="mixS"></i></span></div>
+
+  <h3>증권사(창구)</h3>
+  <div class="btns" style="margin-bottom:6px"><button id="bAll">전체</button><button id="bFor">외국계만</button><button id="bNone">해제</button></div>
+  <div id="brks"></div>
+
+  <h3>시나리오 주입</h3>
+  <div class="btns" id="scens"></div>
+
+  <h3>감지</h3>
+  <div id="alerts"><div class="note">아직 감지된 패턴이 없습니다.</div></div>
+
+  <h3>시점</h3>
+  <div class="btns">
+    <button data-cam="front">정면</button><button data-cam="top">위에서</button><button data-cam="side">측면(시간축)</button><button data-cam="buy">매수 진영</button><button id="rot">자동 회전</button>
+  </div>
+
+  <h3>실데이터 연결 시 주의</h3>
+  <div class="note">틱 체결 데이터에는 보통 투자자 구분과 거래원(증권사)이 붙어 있지 않습니다. 투자자별 동향과 거래원 상위 창구는 집계 데이터로 따로 제공되므로, 실제 연결 때는 집계값 변화량을 틱에 배분하는 추정이 필요합니다.</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="strategy.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const ARENA = 32, ZS = 2, HIST = 45, FLY = 40, TAU = 4;
+const BUY = '#E24B4A', SELL = '#378ADD', HL = '#EF9F27';
+
+const INV = {
+  IND: { name: '개인', color: '#ff2d2d' },
+  FOR: { name: '외인', color: '#2dff5a' },
+  INS: { name: '기관', color: '#3d6bff' },
+};
+const BRK = {
+  kiwoom:  { name: '키움',       color: '#f2c94c', shape: 'box' },
+  mirae:   { name: '미래에셋',   color: '#f2994a', shape: 'sphere' },
+  kb:      { name: 'KB',         color: '#b08968', shape: 'cylinder' },
+  samsung: { name: '삼성',       color: '#56ccf2', shape: 'octa' },
+  nh:      { name: 'NH',         color: '#27ae60', shape: 'cone' },
+  kis:     { name: '한국투자',   color: '#bb6bd9', shape: 'tetra' },
+  ms:      { name: '모건스탠리', color: '#ff6fae', shape: 'dodeca', foreign: true },
+  jpm:     { name: 'JP모간',     color: '#e0e0e0', shape: 'torus', foreign: true },
+  // Generic buckets used by real-data replays, where the broker is only estimated.
+  fgn:     { name: '외국계(추정)', color: '#ff9fd0', shape: 'dodeca', foreign: true },
+  inst:    { name: '기관(추정)',   color: '#7fc8f8', shape: 'octa' },
+  retail:  { name: '개인(추정)',   color: '#f7d774', shape: 'box' },
+};
+const SHAPE_NAME = { box: '정육면체', sphere: '구', cylinder: '원기둥', octa: '팔면체', cone: '원뿔', tetra: '사면체', dodeca: '십이면체', torus: '도넛' };
+const BRK_BY_INV = {
+  IND: [['kiwoom', .45], ['mirae', .2], ['kb', .15], ['kis', .1], ['nh', .1]],
+  FOR: [['ms', .5], ['jpm', .4], ['mirae', .1]],
+  INS: [['samsung', .35], ['nh', .25], ['kis', .2], ['kb', .2]],
+};
+
+const S = {
+  paused: false, speed: 1, threshold: 300, block: 50000, sizeK: 1,
+  colorMode: 'side', shapes: true, autoRot: false,
+  show: { flight: true, trail: true, wave: true, hp: true, aura: true, regular: true, front: true, dust: false },
+  inv: { IND: true, FOR: true, INS: true },
+  brk: Object.fromEntries(Object.keys(BRK).map(k => [k, true])),
+};
+const LAYERS = [
+  ['flight', '체결 알갱이 (충돌 비행)'], ['trail', '시간축 히스토리 (뒤로 흐름)'], ['wave', '체결 파형 (하단)'],
+  ['hp', '호가 잔량 HP 바'], ['aura', '투자자 RGB 오라'], ['regular', '규칙성 하이라이트'],
+  ['front', '전선 (충돌면 + 궤적)'], ['dust', '임계값 미만 먼지'],
+];
+
+// ---------- utils ----------
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const randn = () => Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random());
+const poisson = l => { let n = Math.floor(l); if (Math.random() < l - n) n++; return n; };
+function pick(list) { let r = Math.random(), a = 0; for (const [k, w] of list) { a += w; if (r < a) return k; } return list[list.length - 1][0]; }
+const fmt = n => Math.round(n).toLocaleString('ko-KR');
+const thFromSlider = v => Math.round(Math.pow(10, 1 + v / 100 * 4));
+
+// ---------- state ----------
+let simT = 0, seq = 0, price = 71000, bidQ = 60000, askQ = 60000, front = 0;
+// Simulated market: trades push `mid` (impact); `fair` keeps only the permanent part,
+// and mid reverts toward fair. A fat-finger order has perm 0, so it bounces back.
+const mkt = { ref: 71000, mid: 71000, fair: 71000, index: 0 };
+function impact(tr) {
+  const d = (tr.side === 'B' ? 1 : -1) * tr.qty / 60000 * 0.01 * mkt.mid;
+  mkt.mid += d;
+  mkt.fair += d * (tr.perm ?? 0.4);
+  return Math.round(mkt.mid / 100) * 100;
+}
+const log = [];
+const acc = { B: 1, S: 1 };
+const invAcc = { B: { IND: 0, FOR: 0, INS: 0 }, S: { IND: 0, FOR: 0, INS: 0 } };
+let scen = [], patterns = [], blocks = [];
+let REPLAY = null;  // { d, i, ii, bi } while a recorded day is playing
+
+// ---------- three.js scene ----------
+const stage = $('stage');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#0d1117');
+scene.fog = new THREE.Fog('#0d1117', 70, 150);
+const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 400);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+stage.prepend(renderer.domElement);
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.autoRotateSpeed = 0.8;
+scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+const dl = new THREE.DirectionalLight(0xffffff, 0.8); dl.position.set(10, 30, 20); scene.add(dl);
+
+const ZEND = -HIST * ZS;
+{
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(ARENA * 2, 4 - ZEND), new THREE.MeshBasicMaterial({ color: 0x10161e }));
+  floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0, (4 + ZEND) / 2); scene.add(floor);
+  const pts = [];
+  for (let x = -ARENA; x <= ARENA; x += 4) pts.push(x, 0.01, 4, x, 0.01, ZEND);
+  for (let z = 0; z >= ZEND; z -= ZS * 5) pts.push(-ARENA, 0.01, z, ARENA, 0.01, z);
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  scene.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x26303c })));
+}
+
+function makeZone() {
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ transparent: true, opacity: .5, depthWrite: false }));
+  floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0.03, -1); floor.scale.set(1, 10, 1);
+  const aura = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ transparent: true, opacity: .1, blending: THREE.AdditiveBlending, depthWrite: false }));
+  aura.position.set(0, 4, -1); aura.scale.set(1, 8, 10);
+  scene.add(floor, aura);
+  return { floor, aura };
+}
+const zB = makeZone(), zS = makeZone();
+
+const frontMesh = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), new THREE.MeshBasicMaterial({ color: HL, transparent: true, opacity: .2, side: THREE.DoubleSide, depthWrite: false }));
+frontMesh.rotation.y = Math.PI / 2; frontMesh.position.set(0, 5, -1);
+frontMesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(frontMesh.geometry), new THREE.LineBasicMaterial({ color: HL })));
+scene.add(frontMesh);
+
+const TRAIL_N = 1000, trailPts = [];
+const trailGeo = new THREE.BufferGeometry();
+trailGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL_N * 3), 3));
+const trailLine = new THREE.Line(trailGeo, new THREE.LineBasicMaterial({ color: HL }));
+scene.add(trailLine);
+
+const GEO = {
+  box: new THREE.BoxGeometry(1, 1, 1),
+  sphere: new THREE.SphereGeometry(0.6, 14, 10),
+  cylinder: new THREE.CylinderGeometry(0.5, 0.5, 1, 14),
+  octa: new THREE.OctahedronGeometry(0.68),
+  cone: new THREE.ConeGeometry(0.58, 1, 14),
+  tetra: new THREE.TetrahedronGeometry(0.75),
+  dodeca: new THREE.DodecahedronGeometry(0.62),
+  torus: new THREE.TorusGeometry(0.42, 0.17, 8, 18),
+};
+const EDGES = {};
+const hlMat = new THREE.LineBasicMaterial({ color: HL });
+const MATS = {};
+const matOf = c => MATS[c] || (MATS[c] = new THREE.MeshLambertMaterial({ color: c }));
+
+// sparks + dust share one additive point cloud
+const SPN = 5000;
+const sp = { pos: new Float32Array(SPN * 3), col: new Float32Array(SPN * 3), base: new Float32Array(SPN * 3), vel: new Float32Array(SPN * 3), life: new Float32Array(SPN), max: new Float32Array(SPN), grav: new Float32Array(SPN), i: 0 };
+for (let i = 0; i < SPN; i++) sp.pos[i * 3 + 1] = -999;
+const spGeo = new THREE.BufferGeometry();
+spGeo.setAttribute('position', new THREE.BufferAttribute(sp.pos, 3));
+spGeo.setAttribute('color', new THREE.BufferAttribute(sp.col, 3));
+scene.add(new THREE.Points(spGeo, new THREE.PointsMaterial({ size: 0.35, vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })));
+const tmpC = new THREE.Color();
+function spark(x, y, z, vx, vy, vz, color, life, grav) {
+  const i = sp.i; sp.i = (i + 1) % SPN; const j = i * 3;
+  tmpC.set(color);
+  sp.pos[j] = x; sp.pos[j + 1] = y; sp.pos[j + 2] = z;
+  sp.vel[j] = vx; sp.vel[j + 1] = vy; sp.vel[j + 2] = vz;
+  sp.base[j] = tmpC.r; sp.base[j + 1] = tmpC.g; sp.base[j + 2] = tmpC.b;
+  sp.life[i] = sp.max[i] = life; sp.grav[i] = grav;
+}
+function burst(x, y, z, color, s) {
+  const n = Math.min(60, 6 + s * 8 | 0);
+  for (let k = 0; k < n; k++) spark(x, y, z, randn() * 5, Math.random() * 7, randn() * 5, color, 0.5 + Math.random() * 0.4, 12);
+}
+
+// ---------- trades ----------
+const filt = tr => S.inv[tr.inv] && S.brk[tr.broker];
+const passes = tr => filt(tr) && tr.qty >= S.threshold;
+const sizeOf = q => 0.35 * Math.cbrt(q / 100) * S.sizeK;
+function colorOf(tr) {
+  if (S.colorMode === 'broker') return BRK[tr.broker].color;
+  if (S.colorMode === 'inv') return INV[tr.inv].color;
+  return tr.side === 'B' ? BUY : SELL;
+}
+function makeMesh(tr) {
+  const shape = S.shapes ? BRK[tr.broker].shape : 'box';
+  const m = new THREE.Mesh(GEO[shape], matOf(colorOf(tr)));
+  tr.s = sizeOf(tr.qty);
+  m.scale.setScalar(tr.s);
+  m.userData.shape = shape;
+  tr.mesh = m; scene.add(m);
+  setHL(tr);
+}
+function dropMesh(tr) { if (tr.mesh) { scene.remove(tr.mesh); tr.mesh = null; } }
+function setHL(tr) {
+  const m = tr.mesh; if (!m) return;
+  const on = !!(tr.regular && S.show.regular);
+  if (on && !m.userData.hl) {
+    const sh = m.userData.shape;
+    const hl = new THREE.LineSegments(EDGES[sh] || (EDGES[sh] = new THREE.EdgesGeometry(GEO[sh])), hlMat);
+    hl.scale.setScalar(1.15); m.add(hl); m.userData.hl = hl;
+  } else if (!on && m.userData.hl) { m.remove(m.userData.hl); m.userData.hl = null; }
+}
+function rebuild() { for (const tr of log) { dropMesh(tr); if (passes(tr)) makeMesh(tr); } }
+
+// Entry point for both the simulator and real data.
+// trade = { side:'B'|'S', qty, price?, broker, inv:'IND'|'FOR'|'INS', t? (seconds) }
+function ingest(tr) {
+  tr.id = ++seq;
+  if (tr.t == null) tr.t = simT;
+  if (tr.price == null) tr.price = impact(tr);
+  price = tr.price;
+  log.push(tr);
+  Strat.onTrade(tr);
+  tr.impacted = true; tr.ix = front; tr.jit = Math.random();
+  if (!filt(tr)) return;
+  acc[tr.side] += tr.qty;
+  invAcc[tr.side][tr.inv] += tr.qty;
+  if (tr.qty >= S.threshold) {
+    if (S.show.flight) { tr.impacted = false; tr.x = tr.side === 'B' ? -ARENA : ARENA; }
+    makeMesh(tr);
+  } else if (S.show.dust) {
+    const dir = tr.side === 'B' ? 1 : -1;
+    spark(-dir * ARENA, 0.3 + Math.random(), 0, dir * FLY, 0, 0, tr.side === 'B' ? '#7a2a2a' : '#22466e', Math.abs(front + dir * ARENA) / FLY, 0);
+  }
+}
+window.ingest = ingest;
+
+// ---------- simulator ----------
+const bg = {
+  mood: 0,
+  step(dt) {
+    this.mood = clamp(this.mood + randn() * 0.12 * Math.sqrt(dt) - this.mood * 0.08 * dt, -0.2, 0.2);
+    mkt.fair *= 1 + randn() * 0.0003 * Math.sqrt(dt);
+    mkt.mid += (mkt.fair - mkt.mid) * Math.min(1, 0.06 * dt);
+    mkt.index += randn() * 0.00005 * Math.sqrt(dt);
+    for (let n = poisson(8 * dt); n > 0; n--) {
+      const inv = pick([['IND', .6], ['FOR', .2], ['INS', .2]]);
+      let qty = Math.round(Math.exp(4.3 + 1.1 * randn()));
+      if (Math.random() < .004) qty = 5000 + Math.random() * 15000;
+      ingest({ side: Math.random() < 0.5 + this.mood ? 'B' : 'S', qty: clamp(Math.round(qty), 1, 30000), inv, broker: pick(BRK_BY_INV[inv]) });
+    }
+  },
+};
+function stepScen(dt) {
+  for (const s of scen) {
+    if (s.kind === 'prog') {
+      while (simT >= s.next && s.next < s.until) {
+        ingest({ side: s.side, qty: Math.round(s.qty * (1 + randn() * 0.02)), inv: s.inv, broker: s.broker, perm: s.perm });
+        s.next += s.interval * (1 + randn() * 0.03);
+      }
+    } else if (s.kind === 'crash') {
+      mkt.index -= 0.001 * dt;
+      mkt.fair *= 1 - 0.004 * dt;
+      mkt.mid *= 1 - 0.004 * dt;
+      for (let n = poisson(10 * dt); n > 0; n--) {
+        const inv = pick([['IND', .4], ['FOR', .35], ['INS', .25]]);
+        ingest({ side: 'S', qty: Math.round(Math.exp(6 + 0.7 * randn())), inv, broker: pick(BRK_BY_INV[inv]) });
+      }
+    } else {
+      for (let n = poisson(s.rate * dt); n > 0; n--) {
+        const inv = pick(s.invs);
+        ingest({ side: s.side, qty: Math.round(Math.exp(s.mu + 0.7 * randn())), inv, broker: pick(BRK_BY_INV[inv]) });
+      }
+    }
+  }
+  scen = scen.filter(s => simT < s.until);
+}
+const SCENARIOS = [
+  ['블록딜 매수', () => ingest({ side: 'B', qty: 150000 + Math.random() * 150000 | 0, inv: 'INS', broker: 'samsung' })],
+  ['블록딜 매도', () => ingest({ side: 'S', qty: 150000 + Math.random() * 150000 | 0, inv: 'FOR', broker: 'ms' })],
+  ['프로그램 매수 (외인)', () => scen.push({ kind: 'prog', side: 'B', qty: 1200, interval: 1.5, inv: 'FOR', broker: 'ms', next: simT, until: simT + 35 })],
+  ['프로그램 매도 (기관)', () => scen.push({ kind: 'prog', side: 'S', qty: 800, interval: 2.2, inv: 'INS', broker: 'samsung', next: simT, until: simT + 35 })],
+  ['외인 집중 매수', () => scen.push({ kind: 'flow', side: 'B', invs: [['FOR', 1]], rate: 6, mu: 6.3, until: simT + 15 })],
+  ['기관 매도 우위', () => scen.push({ kind: 'flow', side: 'S', invs: [['INS', 1]], rate: 6, mu: 6.3, until: simT + 15 })],
+  ['모두 매수 (흰색)', () => scen.push({ kind: 'flow', side: 'B', invs: [['IND', 1 / 3], ['FOR', 1 / 3], ['INS', 1 / 3]], rate: 14, mu: 6.5, until: simT + 15 })],
+  ['팻핑거 급락', () => scen.push({ kind: 'prog', side: 'S', qty: 20000, interval: 0.05, inv: 'INS', broker: 'kb', perm: 0, next: simT, until: simT + 0.4 })],
+  ['시장 전체 급락', () => scen.push({ kind: 'crash', until: simT + 12 })],
+  ['시나리오 정지', () => { scen = []; }],
+];
+
+// ---------- detection ----------
+function detect() {
+  for (const tr of log) tr.regular = 0;
+  const groups = new Map();
+  for (const tr of log) {
+    if (!passes(tr)) continue;
+    const key = tr.broker + tr.side + Math.round(Math.log(tr.qty) / 0.12);
+    (groups.get(key) || groups.set(key, []).get(key)).push(tr);
+  }
+  patterns = [];
+  for (const arr of groups.values()) {
+    if (arr.length < 5) continue;
+    const p = findPeriod(arr);
+    if (!p) continue;
+    p.hits.forEach(tr => tr.regular = 1);
+    const f = arr[arr.length - 1];
+    patterns.push({ broker: f.broker, side: f.side, inv: f.inv, qty: p.hits.reduce((a, t) => a + t.qty, 0) / p.hits.length, interval: p.period, n: p.hits.length, last: f.t });
+  }
+  blocks = log.filter(tr => filt(tr) && tr.qty >= S.block);
+  for (const tr of log) setHL(tr);
+  renderAlerts();
+}
+// Candidate periods come from gaps to the next few events, so two interleaved
+// streams with the same period (e.g. two algos) are still caught.
+function findPeriod(arr) {
+  const ts = arr.map(t => t.t), end = ts[ts.length - 1];
+  const has = (x, tol) => { let lo = 0, hi = ts.length - 1; while (lo <= hi) { const m = (lo + hi) >> 1; if (Math.abs(ts[m] - x) <= tol) return true; if (ts[m] < x) lo = m + 1; else hi = m - 1; } return false; };
+  const cands = new Set();
+  for (let i = 0; i < ts.length; i++) for (let j = i + 1; j < Math.min(ts.length, i + 5); j++) {
+    const d = ts[j] - ts[i]; if (d >= 0.3 && d <= 15) cands.add(Math.round(d * 20) / 20);
+  }
+  let best = null;
+  for (const p of [...cands].sort((a, b) => a - b)) {
+    const tol = Math.max(0.08, p * 0.1);
+    const hits = arr.filter(tr => has(tr.t + p, tol) || has(tr.t - p, tol));
+    const eligible = arr.filter(tr => tr.t + p <= end + tol || tr.t - p >= ts[0] - tol).length;
+    const score = hits.length / eligible;
+    if (hits.length >= 5 && score >= 0.7 && (!best || score > best.score + 0.05)) best = { period: p, hits, score };
+  }
+  return best;
+}
+function renderAlerts() {
+  const h = [];
+  for (const p of patterns) h.push(`<div class="a">규칙성 · ${BRK[p.broker].name} ${p.side === 'B' ? '매수' : '매도'} 약 ${fmt(p.qty)}주 · ${p.interval.toFixed(1)}초 간격 · ${p.n}회 (${INV[p.inv].name})</div>`);
+  for (const b of blocks.slice(-4).reverse()) h.push(`<div class="a blk">대량 체결 · ${BRK[b.broker].name} ${b.side === 'B' ? '매수' : '매도'} ${fmt(b.qty)}주 (${INV[b.inv].name}) · ${Math.round(simT - b.t)}초 전</div>`);
+  $('alerts').innerHTML = h.join('') || '<div class="note">아직 감지된 패턴이 없습니다.</div>';
+}
+
+// ---------- RGB aura ----------
+// Net buy per investor -> R,G,B. Everyone buying -> white; one dominant -> its pure color, deeper with size.
+function mix(side) {
+  const o = side === 'B' ? 'S' : 'B', a = invAcc[side], b = invAcc[o];
+  const v = ['IND', 'FOR', 'INS'].map(k => Math.max(0, a[k] - b[k]));
+  const mx = Math.max(...v);
+  const k = mx > 0 ? clamp(mx / 6000, 0.12, 1) / mx : 0;
+  return { r: v[0] * k, g: v[1] * k, b: v[2] * k, i: clamp(mx / 6000, 0, 1) };
+}
+
+// ---------- frame updates ----------
+function updateWorld(dt, rdt) {
+  const k = Math.exp(-dt / TAU);
+  acc.B = acc.B * k + 0.01; acc.S = acc.S * k + 0.01;
+  for (const s of ['B', 'S']) for (const i in invAcc[s]) invAcc[s][i] *= k;
+
+  const ratio = acc.B / (acc.B + acc.S);
+  front += (clamp((ratio - 0.5) * 2, -1, 1) * 26 - front) * Math.min(1, dt * 2);
+
+  if (!REPLAY) {
+    const imb = ratio - 0.5;
+    bidQ = clamp(bidQ + (imb * 20000 + randn() * 6000) * dt, 5000, 400000);
+    askQ = clamp(askQ + (-imb * 20000 + randn() * 6000) * dt, 5000, 400000);
+  }
+
+  while (log.length && log[0].t < simT - HIST) dropMesh(log.shift());
+  for (const tr of log) {
+    const m = tr.mesh; if (!m) continue;
+    const z = -(simT - tr.t) * ZS;
+    if (!tr.impacted) {
+      const dir = tr.side === 'B' ? 1 : -1;
+      tr.x += dir * FLY * dt;
+      const edge = front - dir * tr.s / 2;
+      if (dir * (tr.x - edge) >= 0) {
+        tr.impacted = true; tr.ix = front;
+        burst(front, tr.s / 2, z, colorOf(tr), tr.s);
+      }
+      m.position.set(tr.x, tr.s / 2 + 0.3, z);
+      m.rotation.y += dt * 4;
+    } else {
+      const off = tr.s / 2 + tr.jit * 0.8;
+      m.position.set(tr.side === 'B' ? tr.ix - off : tr.ix + off, tr.s / 2, z);
+    }
+    m.visible = S.show.trail || !tr.impacted || simT - tr.t < 1.5;
+  }
+
+  for (let i = 0; i < SPN; i++) {
+    if (sp.life[i] <= 0) continue;
+    const j = i * 3;
+    sp.life[i] -= rdt * S.speed * (S.paused ? 0 : 1);
+    if (sp.life[i] <= 0) { sp.pos[j + 1] = -999; continue; }
+    sp.vel[j + 1] -= sp.grav[i] * dt;
+    sp.pos[j] += sp.vel[j] * dt; sp.pos[j + 1] = Math.max(0.05, sp.pos[j + 1] + sp.vel[j + 1] * dt); sp.pos[j + 2] += sp.vel[j + 2] * dt;
+    const f = sp.grav[i] ? sp.life[i] / sp.max[i] : 1;
+    sp.col[j] = sp.base[j] * f; sp.col[j + 1] = sp.base[j + 1] * f; sp.col[j + 2] = sp.base[j + 2] * f;
+  }
+  spGeo.attributes.position.needsUpdate = true; spGeo.attributes.color.needsUpdate = true;
+
+  const mB = mix('B'), mS = mix('S');
+  const setZone = (z, x0, x1, base, m, strength) => {
+    z.floor.position.x = z.aura.position.x = (x0 + x1) / 2;
+    z.floor.scale.x = z.aura.scale.x = Math.max(0.01, x1 - x0);
+    if (S.show.aura) {
+      z.floor.material.color.setRGB(m.r, m.g, m.b); z.floor.material.opacity = 0.6;
+      z.aura.visible = true; z.aura.material.color.setRGB(m.r, m.g, m.b); z.aura.material.opacity = 0.05 + 0.2 * m.i;
+    } else {
+      z.floor.material.color.set(base); z.floor.material.opacity = 0.15 + 0.35 * strength;
+      z.aura.visible = false;
+    }
+  };
+  setZone(zB, -ARENA, front, BUY, mB, ratio);
+  setZone(zS, front, ARENA, SELL, mS, 1 - ratio);
+  $('mixB').style.background = `rgb(${mB.r * 255 | 0},${mB.g * 255 | 0},${mB.b * 255 | 0})`;
+  $('mixS').style.background = `rgb(${mS.r * 255 | 0},${mS.g * 255 | 0},${mS.b * 255 | 0})`;
+
+  frontMesh.visible = trailLine.visible = S.show.front;
+  frontMesh.position.x = front;
+  frontMesh.material.opacity = 0.15 + 0.08 * Math.sin(performance.now() / 150);
+  if (dt > 0 && (!trailPts.length || simT - trailPts[trailPts.length - 1].t > 0.1)) trailPts.push({ t: simT, x: front });
+  while (trailPts.length && (trailPts[0].t < simT - HIST || trailPts.length > TRAIL_N)) trailPts.shift();
+  const tp = trailGeo.attributes.position.array;
+  trailPts.forEach((p, i) => { tp[i * 3] = p.x; tp[i * 3 + 1] = 0.06; tp[i * 3 + 2] = -(simT - p.t) * ZS; });
+  trailGeo.setDrawRange(0, trailPts.length); trailGeo.attributes.position.needsUpdate = true;
+
+  while (markers.length && markers[0].t < simT - HIST) scene.remove(markers.shift().m);
+  for (const mk of markers) mk.m.position.z = -(simT - mk.t) * ZS;
+}
+
+// Order markers: a tall beam where the order fired, flowing back with the history.
+const ORD_COLOR = { B: '#ffd400', S: '#c084fc' };
+const markers = [], MK_GEO = new THREE.BoxGeometry(0.3, 14, 0.3);
+Strat.onOrder = o => {
+  const m = new THREE.Mesh(MK_GEO, new THREE.MeshBasicMaterial({ color: ORD_COLOR[o.side] }));
+  m.position.set(front, 7, 0);
+  scene.add(m);
+  markers.push({ t: simT, m, o });
+};
+
+function updateHud() {
+  $('cs').textContent = Math.round(acc.B / acc.S * 100);
+  $('clock').textContent = REPLAY ? hms(simT) + ' ·' : '';
+  $('px').textContent = fmt(price);
+  const pc = price / mkt.ref - 1;
+  $('pc').textContent = (pc >= 0 ? '+' : '') + (pc * 100).toFixed(2) + '%'; $('pc').className = pc >= 0 ? 'up' : 'dn';
+  $('ix').textContent = (mkt.index >= 0 ? '+' : '') + (mkt.index * 100).toFixed(2) + '%'; $('ix').className = mkt.index >= 0 ? 'up' : 'dn';
+  $('bq').textContent = fmt(bidQ); $('aq').textContent = fmt(askQ);
+  const t = bidQ + askQ;
+  $('bhp').style.width = (bidQ / t * 100).toFixed(1) + '%';
+  $('ahp').style.width = (askQ / t * 100).toFixed(1) + '%';
+  for (const k in INV) {
+    const net = invAcc.B[k] - invAcc.S[k];
+    const w = clamp(Math.abs(net) / 12000, 0, 1) * 50;
+    const bar = $('nb_' + k);
+    bar.style.left = net >= 0 ? '50%' : (50 - w) + '%'; bar.style.width = w + '%';
+    $('nv_' + k).textContent = (net >= 0 ? '+' : '') + fmt(net);
+  }
+}
+
+// ---------- waveform ----------
+const wcv = $('wcv'), wctx = wcv.getContext('2d');
+function drawWave() {
+  const dpr = devicePixelRatio || 1, W = wcv.clientWidth, H = wcv.clientHeight;
+  if (wcv.width !== W * dpr || wcv.height !== H * dpr) { wcv.width = W * dpr; wcv.height = H * dpr; }
+  const c = wctx; c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, W, H);
+  const mid = H / 2;
+  let maxQ = 1000; for (const tr of log) if (filt(tr) && tr.qty > maxQ) maxQ = tr.qty;
+  const sc = (mid - 10) / Math.sqrt(maxQ);
+  c.strokeStyle = '#26303c'; c.lineWidth = 1; c.fillStyle = '#8b96a5'; c.font = '11px Malgun Gothic, sans-serif';
+  for (let s = 0; s <= HIST; s += 5) { const x = W - s / HIST * W; c.beginPath(); c.moveTo(x, 0); c.lineTo(x, H); c.stroke(); if (s) c.fillText(`-${s}s`, x + 3, H - 4); }
+  c.beginPath(); c.moveTo(0, mid); c.lineTo(W, mid); c.stroke();
+  const ty = Math.sqrt(S.threshold) * sc;
+  c.setLineDash([4, 4]); c.strokeStyle = '#5a6472';
+  c.beginPath(); c.moveTo(0, mid - ty); c.lineTo(W, mid - ty); c.moveTo(0, mid + ty); c.lineTo(W, mid + ty); c.stroke();
+  c.setLineDash([]);
+  c.fillText('매수 ▲', 6, 13); c.fillText('매도 ▼', 6, H - 18); c.fillText(`임계 ${fmt(S.threshold)}주`, 6, mid - ty - 3);
+  for (const tr of log) {
+    if (!filt(tr)) continue;
+    const x = W - (simT - tr.t) / HIST * W, h = Math.sqrt(tr.qty) * sc, big = tr.qty >= S.threshold;
+    c.strokeStyle = tr.regular && S.show.regular ? HL : big ? colorOf(tr) : '#333c48';
+    c.lineWidth = big ? 2 : 1;
+    const y = tr.side === 'B' ? mid - h : mid + h;
+    c.beginPath(); c.moveTo(x, mid); c.lineTo(x, y); c.stroke();
+    if (tr.qty >= S.block) { c.fillStyle = '#e0e0e0'; c.fillText(fmt(tr.qty), x + 4, tr.side === 'B' ? y + 10 : y - 2); c.fillStyle = '#8b96a5'; }
+  }
+  c.setLineDash([2, 3]);
+  for (const mk of markers) {
+    const x = W - (simT - mk.t) / HIST * W;
+    c.strokeStyle = c.fillStyle = ORD_COLOR[mk.o.side];
+    c.beginPath(); c.moveTo(x, 0); c.lineTo(x, H); c.stroke();
+    c.fillText(`${mk.o.side === 'B' ? '매수' : '매도'}·${mk.o.k === 'trend' ? '추세' : '낙폭'}`, x + 3, 26);
+  }
+  c.setLineDash([]);
+}
+
+// ---------- UI ----------
+$('layers').innerHTML = LAYERS.map(([k, l]) => `<label class="t"><input type="checkbox" data-layer="${k}" ${S.show[k] ? 'checked' : ''}>${l}</label>`).join('');
+$('invs').innerHTML = Object.entries(INV).map(([k, v]) => `<div class="kv" style="margin:4px 0"><label class="t" style="width:84px;margin:0;white-space:nowrap"><input type="checkbox" data-inv="${k}" checked><i class="sw" style="background:${v.color}"></i>${v.name}</label><div class="bar"><i id="nb_${k}" style="background:${v.color}"></i></div><span id="nv_${k}" style="width:64px;text-align:right;font-size:12px">0</span></div>`).join('');
+$('brks').innerHTML = Object.entries(BRK).map(([k, v]) => `<label class="t"><input type="checkbox" data-brk="${k}" checked><i class="sw" style="background:${v.color}"></i>${v.name}<span class="note" style="margin-left:auto">${SHAPE_NAME[v.shape]}${v.foreign ? ' · 외국계' : ''}</span></label>`).join('');
+$('scens').innerHTML = SCENARIOS.map(([l], i) => `<button data-sc="${i}">${l}</button>`).join('');
+
+document.addEventListener('change', e => {
+  const d = e.target.dataset;
+  if (d.layer) {
+    S.show[d.layer] = e.target.checked;
+    if (d.layer === 'hp') $('hpbox').style.visibility = $('bq').parentNode.style.visibility = $('aq').parentNode.style.visibility = e.target.checked ? 'visible' : 'hidden';
+    if (d.layer === 'wave') $('wave').style.display = e.target.checked ? '' : 'none';
+    if (d.layer === 'regular') log.forEach(setHL);
+  } else if (d.inv) { S.inv[d.inv] = e.target.checked; rebuild(); detect(); }
+  else if (d.brk) { S.brk[d.brk] = e.target.checked; rebuild(); detect(); }
+  else if (e.target.name === 'cm') { S.colorMode = e.target.value; rebuild(); }
+  else if (e.target.id === 'shapes') { S.shapes = e.target.checked; rebuild(); }
+  else if (e.target.id === 'speed') S.speed = +e.target.value;
+});
+const syncBrk = () => { document.querySelectorAll('[data-brk]').forEach(el => el.checked = S.brk[el.dataset.brk]); rebuild(); detect(); };
+$('bAll').onclick = () => { for (const k in BRK) S.brk[k] = true; syncBrk(); };
+$('bFor').onclick = () => { for (const k in BRK) S.brk[k] = !!BRK[k].foreign; syncBrk(); };
+$('bNone').onclick = () => { for (const k in BRK) S.brk[k] = false; syncBrk(); };
+$('scens').onclick = e => { const i = e.target.dataset.sc; if (i != null) SCENARIOS[i][1](); };
+$('pause').onclick = () => { S.paused = !S.paused; $('pause').textContent = S.paused ? '재생' : '일시정지'; $('pause').classList.toggle('on', S.paused); };
+$('rot').onclick = () => { controls.autoRotate = !controls.autoRotate; $('rot').classList.toggle('on', controls.autoRotate); };
+
+// ---------- strategy panel ----------
+const SC = Strat.cfg, SS = Strat.st;
+$('wts').innerHTML = ['FOR', 'INS', 'IND'].map(k => `<div class="kv"><span><i class="sw" style="background:${INV[k].color}"></i> ${INV[k].name} 가중치</span><b id="w${k}v"></b></div><input type="range" id="w${k}" min="0" max="1" step="0.05" value="${SC.weights[k]}">`).join('');
+$('stTrend').onchange = e => SC.trend.on = e.target.checked;
+$('stDrop').onchange = e => SC.drop.on = e.target.checked;
+$('stReqFor').onchange = e => SC.trend.requireForeign = e.target.checked;
+$('kill').onclick = () => {
+  if (SS.killed || SS.halted) Strat.resume(); else Strat.kill();
+  renderStrat();
+};
+const won = v => (v >= 0 ? '+' : '') + fmt(v) + '원';
+function renderStrat() {
+  const f = SS.feat;
+  if (f.price) $('feat').innerHTML = [
+    ['가중 체결강도', Math.round(f.cs) + '%'],
+    ['기울기 (R²)', `${f.slope >= 0 ? '+' : ''}${f.slope.toFixed(1)} (${f.r2.toFixed(2)})`],
+    ['세력지수', (f.wfs >= 0 ? '+' : '') + f.wfs.toFixed(2)],
+    ['외인 순매수 지속', SS.forPersist + '초'],
+    ['흡수 의심', f.absorb ? '예' : '아니오'],
+    ['VWAP', fmt(f.vwap)],
+    ['고점 대비', '-' + (f.drop * 100).toFixed(1) + '%'],
+    ['지수 10초', (f.idxChg * 100).toFixed(2) + '%'],
+  ].map(([k, v]) => `<span>${k} <b>${v}</b></span>`).join('');
+  const chips = (title, list) => `<div class="chips">${title} ${list.map(([n, ok]) => `<span class="chip ${ok ? 'ok' : ''}">${n}</span>`).join('')}</div>`;
+  $('checks').innerHTML = chips('추세', SS.checks.trend) + chips('낙폭', SS.checks.drop);
+  const pos = Object.entries(SS.pos).filter(([, p]) => p).map(([k, p]) => {
+    const r = price / p.px - 1;
+    return `<div>${k === 'trend' ? '추세' : '낙폭'} 보유 ${fmt(p.qty)}주 @${fmt(p.px)} <span class="${r >= 0 ? 'up' : 'dn'}">${(r * 100).toFixed(2)}%</span></div>`;
+  }).join('');
+  const state = SS.killed ? '<div class="dn">긴급 정지됨</div>' : SS.halted ? '<div class="dn">일일 손실 한도 도달 · 신규 진입 중지</div>' : '';
+  $('pnl').innerHTML = `${state}${pos}<div class="kv"><span>실현 손익</span><b class="${SS.realized >= 0 ? 'up' : 'dn'}">${won(SS.realized)}</b></div><div class="kv"><span>평가 손익</span><b>${won(SS.unreal)}</b></div><div class="kv note"><span>수수료·세금 누계</span><span>${fmt(SS.costs)}원</span></div>`;
+  $('olog').innerHTML = SS.log.slice(-8).reverse().map(o => `<div class="ord"><span style="color:${ORD_COLOR[o.side]}">${o.side === 'B' ? '매수' : '매도'}</span> ${o.k === 'trend' ? '추세' : '낙폭'} ${fmt(o.qty)}주 @${fmt(o.px)}${o.pnl != null ? ` <span class="${o.pnl >= 0 ? 'up' : 'dn'}">${won(o.pnl)}</span>` : ''}<div class="r">${o.t.toFixed(0)}초 · ${o.reason}</div></div>`).join('');
+  $('kill').textContent = SS.killed || SS.halted ? '재개' : '긴급 정지 (전량 청산)';
+}
+
+// ---------- replay of collected data ----------
+function resetWorld() {
+  for (const tr of log) dropMesh(tr);
+  log.length = 0;
+  for (const mk of markers) scene.remove(mk.m);
+  markers.length = 0; trailPts.length = 0;
+  scen = []; patterns = []; blocks = [];
+  acc.B = acc.S = 1;
+  for (const s of ['B', 'S']) for (const i in invAcc[s]) invAcc[s][i] = 0;
+  front = 0;
+  Strat.reset();
+}
+const hms = t => { const s = Math.floor(t + 9 * 3600); return [s / 3600 | 0, (s / 60 | 0) % 60, s % 60].map(v => String(v).padStart(2, '0')).join(':'); };
+function replayStep() {
+  const R = REPLAY, d = R.d;
+  while (R.i < d.trades.length && d.trades[R.i][0] <= simT) {
+    const [t, side, qty, p, inv, broker] = d.trades[R.i++];
+    ingest({ t, side, qty, price: p, inv, broker: BRK[broker] ? broker : 'retail' });
+  }
+  while (R.ii < d.index.length && d.index[R.ii][0] <= simT) mkt.index = d.index[R.ii++][1];
+  while (R.bi < d.book.length && d.book[R.bi][0] <= simT) [, bidQ, askQ] = d.book[R.bi++];
+  if (R.i >= d.trades.length && !R.done) {
+    R.done = true;
+    $('replayInfo').textContent += ' · 재생 끝';
+  }
+}
+$('replayFile').onchange = async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  let d;
+  try { d = JSON.parse(await file.text()); } catch { d = null; }
+  if (!d || !Array.isArray(d.trades) || !d.trades.length) { $('replayInfo').textContent = '재생 파일 형식이 아닙니다.'; return; }
+  resetWorld();
+  REPLAY = { d, i: 0, ii: 0, bi: 0 };
+  d.index = d.index || []; d.book = d.book || [];
+  simT = d.trades[0][0] - 1;
+  mkt.ref = price = d.trades[0][3]; mkt.index = 0;
+  $('replayInfo').textContent = `${d.date} ${d.code} · 체결 ${fmt(d.trades.length)}건 · 투자자/거래원은 추정치`;
+};
+$('replayStop').onclick = () => {
+  REPLAY = null;
+  resetWorld();
+  mkt.ref = mkt.mid = mkt.fair = price; mkt.index = 0;
+  $('replayFile').value = '';
+  $('replayInfo').textContent = '시뮬레이션으로 돌아왔습니다.';
+};
+
+function bindRange(id, out, apply) {
+  const el = $(id), upd = () => { $(out).textContent = apply(+el.value); };
+  el.addEventListener('input', upd); upd();
+}
+bindRange('th', 'thv', v => { S.threshold = thFromSlider(v); rebuild(); detect(); return fmt(S.threshold) + '주'; });
+bindRange('bl', 'blv', v => { S.block = thFromSlider(v); detect(); return fmt(S.block) + '주'; });
+bindRange('sz', 'szv', v => { S.sizeK = v; rebuild(); return v.toFixed(1) + 'x'; });
+for (const k of ['FOR', 'INS', 'IND']) bindRange('w' + k, `w${k}v`, v => { SC.weights[k] = v; return v.toFixed(2); });
+
+const CAMS = {
+  front: [[0, 28, 34], [0, 0, -14]],
+  top: [[0.01, 95, -22], [0, 0, -22]],
+  side: [[62, 16, -8], [0, 0, -32]],
+  buy: [[-52, 14, 12], [0, 2, -10]],
+};
+function setCam(k) { const [p, t] = CAMS[k]; camera.position.set(...p); controls.target.set(...t); controls.update(); }
+document.querySelectorAll('[data-cam]').forEach(b => b.onclick = () => setCam(b.dataset.cam));
+setCam('front');
+
+new ResizeObserver(() => {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
+}).observe(stage);
+
+// ---------- loop ----------
+let last = performance.now(), detAt = 0, stratAt = 0;
+function frame(now) {
+  const rdt = Math.min(0.05, (now - last) / 1000); last = now;
+  const dt = S.paused ? 0 : rdt * S.speed;
+  if (dt > 0) {
+    simT += dt;
+    if (REPLAY) replayStep(); else { bg.step(dt); stepScen(dt); }
+    Strat.onTick(simT, mkt);
+  }
+  updateWorld(dt, rdt);
+  updateHud();
+  if (now - stratAt > 250) { stratAt = now; renderStrat(); }
+  if (S.show.wave) drawWave();
+  if (now - detAt > 500) { detAt = now; detect(); }
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

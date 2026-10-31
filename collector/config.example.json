@@ -1,0 +1,24 @@
+{
+  "app_key": "",
+  "app_secret": "",
+  "symbols": {
+    "298040": "효성중공업",
+    "005380": "현대차",
+    "005930": "삼성전자"
+  },
+  "exchange": "0",
+  "requests_per_sec": 4,
+  "intervals": {
+    "ticks": 1.0,
+    "book": 2.0,
+    "index": 5,
+    "foreign": 10,
+    "program": 30,
+    "investor": 60
+  },
+  "tick_fetch_count": 100,
+  "session": { "start": "08:55", "end": "15:35" },
+  "data_dir": "data",
+  "ip": null,
+  "mac": null
+}

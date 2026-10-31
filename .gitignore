@@ -1,0 +1,4 @@
+collector/config.json
+collector/.token.json
+data/
+__pycache__/
